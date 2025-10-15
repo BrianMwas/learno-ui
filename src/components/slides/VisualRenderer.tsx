@@ -1,6 +1,6 @@
 'use client';
 
-import { VisualData, SVGData, SVGShape, SVGArrow } from '@/types/chat';
+import { VisualData, SVGData } from '@/types/chat';
 import { useEffect, useRef } from 'react';
 import mermaid from 'mermaid';
 

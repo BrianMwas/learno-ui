@@ -31,7 +31,6 @@ export function ChatPanel({
   isConnected,
   isLoading,
   isWaitingForInput,
-  threadId,
   stage,
   transientMessage,
   onSendMessage,

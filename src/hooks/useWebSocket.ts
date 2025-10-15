@@ -16,7 +16,7 @@ interface WebSocketState {
   isLoading: boolean;
   isLoadingSlide: boolean;
   topicsCovered: string[];
-  totalTopics: number;
+ 
 }
 
 interface WebSocketActions {
@@ -36,12 +36,12 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingSlide, setIsLoadingSlide] = useState(false);
   const [topicsCovered, setTopicsCovered] = useState<string[]>([]);
-  const [totalTopics, setTotalTopics] = useState<number>(5);
+  // const [totalTopics, setTotalTopics] = useState<number>(5);
   const wsRef = useRef<WebSocket | null>(null);
   const seenMessageIds = useRef<Set<string>>(new Set());
 
   // Helper to check if we've seen this message before
-  const isMessageSeen = useCallback((messageId?: string, content?: string) => {
+  const isMessageSeen = useCallback((messageId?: string) => {
     if (messageId) {
       if (seenMessageIds.current.has(messageId)) {
         console.log('⏭️  Skipping duplicate message:', messageId);
@@ -90,7 +90,7 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
           // Use message_id if available, otherwise check content
           const msgId = message.message_id;
 
-          if (isMessageSeen(msgId, latestMsg.content)) {
+          if (isMessageSeen(msgId)) {
             break; // Skip duplicate
           }
 
@@ -148,7 +148,7 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
         setTransientMessage(null);
 
         // Add AI's message (the question they're asking)
-        if (message.message && !isMessageSeen(message.message_id, message.message)) {
+        if (message.message && !isMessageSeen(message.message_id)) {
           setMessages(prev => {
             // Content-based fallback check if no ID
             if (!message.message_id) {
@@ -176,7 +176,7 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
         setIsWaitingForInput(false);
         setTransientMessage(null);
 
-        if (!isMessageSeen(message.message_id, message.message)) {
+        if (!isMessageSeen(message.message_id)) {
           setMessages(prev => {
             // Content-based fallback check if no ID
             if (!message.message_id) {
@@ -365,7 +365,6 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
     isLoading,
     isLoadingSlide,
     topicsCovered,
-    totalTopics,
     sendMessage,
     resetSession,
   };
