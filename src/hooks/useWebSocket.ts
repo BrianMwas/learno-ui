@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { WSMessage, ChatMessage, Slide } from '@/types/chat';
 
 interface WebSocketState {
   ws: WebSocket | null;
-  threadId: string | null;
+  threadId: string;
   isConnected: boolean;
   messages: ChatMessage[];
   currentSlide: Slide | null;
@@ -23,7 +24,7 @@ interface WebSocketActions {
 
 export function useWebSocket(): WebSocketState & WebSocketActions {
   const [ws, setWs] = useState<WebSocket | null>(null);
-  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string>(() => uuidv4());
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentSlide, setCurrentSlide] = useState<Slide | null>(null);
@@ -87,11 +88,6 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
         setIsWaitingForInput(true);
         setStage(message.stage);
 
-        if (!threadId && message.interrupt_id) {
-          const extractedThreadId = message.interrupt_id.split('_')[0];
-          setThreadId(extractedThreadId);
-        }
-
         if (message.message) {
           setMessages(prev => [...prev, {
             role: 'assistant',
@@ -130,38 +126,64 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
   }, [stage, threadId]);
 
   useEffect(() => {
+    if (!threadId) return;
+
+    let reconnectTimeout: NodeJS.Timeout;
+
     const connectWebSocket = () => {
-      const websocket = new WebSocket('ws://localhost:8000/ws/chat');
+      try {
+        console.log('Attempting to connect to WebSocket with thread_id:', threadId);
+        const websocket = new WebSocket(`ws://localhost:8000/ws/chat/${threadId}`);
 
-      websocket.onopen = () => {
-        console.log('WebSocket connected');
-        setIsConnected(true);
-        wsRef.current = websocket;
-        setWs(websocket);
-      };
+        websocket.onopen = () => {
+          console.log('✅ WebSocket connected successfully');
+          setIsConnected(true);
+          wsRef.current = websocket;
+          setWs(websocket);
+        };
 
-      websocket.onmessage = (event) => {
-        handleWebSocketMessage(JSON.parse(event.data));
-      };
+        websocket.onmessage = (event) => {
+          try {
+            handleWebSocketMessage(JSON.parse(event.data));
+          } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
+          }
+        };
 
-      websocket.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        websocket.onerror = (error) => {
+          console.error('❌ WebSocket error:', error);
+          console.log('Make sure your backend server is running on http://localhost:8000');
+          setIsConnected(false);
+        };
+
+        websocket.onclose = (event) => {
+          console.log('WebSocket disconnected. Code:', event.code, 'Reason:', event.reason);
+          setIsConnected(false);
+          wsRef.current = null;
+          setWs(null);
+
+          // Auto-reconnect after 3 seconds
+          console.log('Attempting to reconnect in 3 seconds...');
+          reconnectTimeout = setTimeout(connectWebSocket, 3000);
+        };
+      } catch (error) {
+        console.error('Failed to create WebSocket connection:', error);
         setIsConnected(false);
-      };
-
-      websocket.onclose = () => {
-        console.log('WebSocket disconnected');
-        setIsConnected(false);
-        setTimeout(connectWebSocket, 3000);
-      };
+        reconnectTimeout = setTimeout(connectWebSocket, 3000);
+      }
     };
 
     connectWebSocket();
 
     return () => {
-      wsRef.current?.close();
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
     };
-  }, [handleWebSocketMessage]);
+  }, [threadId, handleWebSocketMessage]);
 
   const sendMessage = useCallback((userMessage: string) => {
     if (!userMessage.trim() || !ws || !isConnected) return;
@@ -195,7 +217,11 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
       ws.close();
     }
 
-    setThreadId(null);
+    // Generate new thread ID for new session
+    const newThreadId = uuidv4();
+    console.log('Starting new session with thread_id:', newThreadId);
+
+    setThreadId(newThreadId);
     setMessages([]);
     setCurrentSlide(null);
     setStage('introduction');

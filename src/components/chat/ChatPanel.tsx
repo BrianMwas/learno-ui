@@ -15,7 +15,7 @@ interface ChatPanelProps {
   isConnected: boolean;
   isLoading: boolean;
   isWaitingForInput: boolean;
-  threadId: string | null;
+  threadId: string;
   transientMessage: string | null;
   onSendMessage: (message: string) => void;
   onNewSession: () => void;
@@ -66,9 +66,7 @@ export function ChatPanel({
             ) : (
               <span className="text-black/40">● Disconnected</span>
             )}
-            {threadId && (
-              <span className="ml-2 text-black/40">Session: {threadId.slice(0, 8)}</span>
-            )}
+            <span className="ml-2 text-black/40">Session: {threadId.slice(0, 8)}</span>
           </div>
           <Button
             onClick={onNewSession}
@@ -113,12 +111,12 @@ export function ChatPanel({
                     className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[80%] px-4 py-3 rounded-[20px] border ${
+                      className={`px-4 py-3 rounded-[16px] transition-all ${
                         message.role === 'user'
-                          ? 'bg-black text-white border-black'
+                          ? 'max-w-[60%] bg-black text-white border border-black'
                           : message.role === 'system'
-                          ? 'bg-black/5 text-black border-black/20'
-                          : 'bg-white text-black border-black/10'
+                          ? 'max-w-[85%] bg-black/5 text-black border border-black/20'
+                          : 'max-w-[85%] bg-white text-black border border-transparent hover:border-black/10'
                       }`}
                     >
                       <TextAnimate className="text-sm">
