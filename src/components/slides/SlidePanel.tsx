@@ -81,8 +81,8 @@ export function SlidePanel({ currentSlide, isLoading = false, topicsCovered = []
 
 
                   {/* Visual Renderer */}
-                  {currentSlide.visual && (
-                    <VisualRenderer visual={currentSlide.visual} />
+                  {currentSlide.full_content && (
+                    <VisualRenderer slide={currentSlide} />
                   )}
                 </div>
               </TextAnimate>

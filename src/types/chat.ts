@@ -1,4 +1,51 @@
+
 // types/chat.ts
+
+// ============ VISUAL DATA TYPES ============
+
+/**
+ * SVG Shape Definition
+ */
+export interface SVGShape {
+  type: 'rect' | 'circle' | 'ellipse';
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  rx?: number;  // for circles/ellipses
+  ry?: number;  // for ellipses
+  fill: string;
+  label?: string;
+  labelX?: number;
+  labelY?: number;
+}
+
+/**
+ * SVG Arrow Definition
+ */
+export interface SVGArrow {
+  from: [number, number];
+  to: [number, number];
+  label?: string;
+}
+
+/**
+ * SVG Data Structure (returned when visual_type is "svg")
+ */
+export interface SVGData {
+  shapes: SVGShape[];
+  arrows: SVGArrow[];
+}
+
+/**
+ * Visual Data - can be Mermaid code, SVG instructions, or asset name
+ */
+export type VisualData = 
+  | string              // For "mermaid" (Mermaid diagram code) or "premade" (asset name)
+  | SVGData             // For "svg" (SVG instructions)
+  | null;               // For "none" (no visual)
+
+// ============ SLIDE TYPES ============
 
 export interface Slide {
   slide_number: number;
@@ -9,16 +56,23 @@ export interface Slide {
   topic?: string;
   key_points?: string[];
   code_example?: string;
+  // ✨ NEW: Visual data fields
+  visual_type?: 'mermaid' | 'svg' | 'premade' | 'none';
+  visual_data?: VisualData;
 }
+
+// ============ CHAT MESSAGE TYPES ============
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   id?: string;
   isMarkdown?: boolean;
-  isStreaming?: boolean; // ✨ NEW: Indicate if message is being streamed
+  isStreaming?: boolean;
   timestamp?: string;
 }
+
+// ============ SESSION INFO TYPES ============
 
 export interface SessionInfo {
   current_topic?: string;
@@ -33,14 +87,15 @@ export interface SessionInfo {
   total_slides: number;
 }
 
-// WebSocket Message Types
-export type WSMessage = 
+// ============ WEBSOCKET MESSAGE TYPES ============
+
+export type WSMessage =
   // Client -> Server
   | { type: 'message'; content: string }
   | { type: 'resume'; answer: string }
   | { type: 'ping' }
   
-  // Server -> Client (New Token Streaming Types)
+  // Server -> Client (Token Streaming)
   | {
       type: 'stream_start';
       message?: string;
