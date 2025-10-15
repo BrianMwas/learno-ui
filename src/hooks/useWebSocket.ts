@@ -15,6 +15,8 @@ interface WebSocketState {
   transientMessage: string | null;
   isLoading: boolean;
   isLoadingSlide: boolean;
+  topicsCovered: string[];
+  totalTopics: number;
 }
 
 interface WebSocketActions {
@@ -33,20 +35,14 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
   const [transientMessage, setTransientMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingSlide, setIsLoadingSlide] = useState(false);
+  const [topicsCovered, setTopicsCovered] = useState<string[]>([]);
+  const [totalTopics, setTotalTopics] = useState<number>(5);
   const wsRef = useRef<WebSocket | null>(null);
 
   const handleWebSocketMessage = useCallback((message: WSMessage) => {
     console.log('📩 Received:', message.type, message);
 
     switch (message.type) {
-      case 'connection':
-        // Save thread_id if provided, show connection status
-        if (message.thread_id) {
-          console.log('Thread ID from server:', message.thread_id);
-        }
-        setIsConnected(true);
-        break;
-
       case 'stream_start':
         // Show transient "Processing..." message
         console.log('🔄 Stream started');
@@ -99,6 +95,11 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
           const latestSlide = message.data.slides[message.data.slides.length - 1];
           setCurrentSlide(latestSlide);
           setTimeout(() => setIsLoadingSlide(false), 500);
+
+          // Track topics covered
+          if (latestSlide.topic && !topicsCovered.includes(latestSlide.topic)) {
+            setTopicsCovered(prev => [...prev, latestSlide.topic]);
+          }
         }
         setStage(message.data.current_stage || stage);
         break;
@@ -138,6 +139,11 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
           setIsLoadingSlide(true);
           setCurrentSlide(message.slide);
           setTimeout(() => setIsLoadingSlide(false), 500);
+
+          // Track topics covered
+          if (message.slide.topic && !topicsCovered.includes(message.slide.topic)) {
+            setTopicsCovered(prev => [...prev, message.slide.topic]);
+          }
         }
 
         if (message.current_stage) {
@@ -180,6 +186,7 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
         websocket.onopen = () => {
           console.log('✅ WebSocket connected successfully');
           setIsConnected(true);
+          setIsLoading(true);  // Show spinner while waiting for first message
           wsRef.current = websocket;
           setWs(websocket);
         };
@@ -271,6 +278,7 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
     setTransientMessage(null);
     setIsLoading(false);
     setIsLoadingSlide(false);
+    setTopicsCovered([]);
   }, [ws]);
 
   return {
@@ -284,6 +292,8 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
     transientMessage,
     isLoading,
     isLoadingSlide,
+    topicsCovered,
+    totalTopics,
     sendMessage,
     resetSession,
   };

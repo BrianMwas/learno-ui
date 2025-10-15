@@ -4,13 +4,17 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from '@/components/ui/empty';
 import { Presentation } from 'lucide-react';
 import { Slide } from '@/types/chat';
+import { VisualRenderer } from './VisualRenderer';
 
 interface SlidePanelProps {
   currentSlide: Slide | null;
   isLoading?: boolean;
+  topicsCovered?: string[];
+  totalTopics?: number;
 }
 
 const TextAnimate = ({ children }: { children: React.ReactNode }) => (
@@ -37,7 +41,7 @@ function SlidesSkeleton() {
   );
 }
 
-export function SlidePanel({ currentSlide, isLoading = false }: SlidePanelProps) {
+export function SlidePanel({ currentSlide, isLoading = false, topicsCovered = [], totalTopics = 5 }: SlidePanelProps) {
   return (
     <div className="w-[69%] flex flex-col">
       {/* Learning Topic Header - Outside the box */}
@@ -51,6 +55,15 @@ export function SlidePanel({ currentSlide, isLoading = false }: SlidePanelProps)
       )}
 
       <div className="flex-1 border border-black/10 rounded-[24px] flex flex-col bg-white overflow-hidden">
+        {/* Progress Bar */}
+        {topicsCovered.length > 0 && (
+          <div className="px-4 py-2 bg-gray-50 border-b">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-xs text-black/60 whitespace-nowrap">Progress: {topicsCovered.length}/{totalTopics} topics</span>
+              <Progress value={(topicsCovered.length / totalTopics) * 100} className="h-2 flex-1" />
+            </div>
+          </div>
+        )}
         <ScrollArea className="flex-1">
           <div className="p-8">
             {isLoading ? (
@@ -102,6 +115,11 @@ export function SlidePanel({ currentSlide, isLoading = false }: SlidePanelProps)
                       {currentSlide.content}
                     </ReactMarkdown>
                   </div>
+
+                  {/* Visual Renderer */}
+                  {currentSlide.visual && (
+                    <VisualRenderer visual={currentSlide.visual} />
+                  )}
                 </div>
               </TextAnimate>
             ) : (
