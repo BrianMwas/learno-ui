@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Learno Frontend
 
-## Getting Started
+This is the frontend for **Learno**, an AI-based teaching service that allows for **visual interactions** and **progressive learning**.  
+It has been built with **ShadCN** and **React (TypeScript)**.
 
-First, run the development server:
+---
+
+## 🧩 Running the App
+
+To start the app, run the following command:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This will initialize and launch the frontend.  
+⚠️ **Note:** The backend must be running for the app to work correctly.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 💡 App Overview
 
-## Learn More
+The interface is structured into two main sections:
+- **Right Panel:** A chat interface for user-bot interactions.  
+- **Left Panel:** A visual display area that updates dynamically with each bot response.
 
-To learn more about Next.js, take a look at the following resources:
+The visuals are designed to reflect data sent by the AI, creating an engaging learning experience.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## ⚠️ Known Limitations
 
-## Deploy on Vercel
+Due to limited credits for image generation and time spent fixing bugs and refining the flow:
+- Some visual elements may not render as expected.  
+- Certain interactions might be incomplete.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Despite these challenges, the goal was to deliver a coherent and well-structured learning experience.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## 🙏 Closing Note
+
+Thank you for the opportunity to present this project.  
+If given more time and resources—especially to refine the backend integration—the platform could be fully realized as intended.
