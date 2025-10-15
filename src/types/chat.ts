@@ -1,72 +1,160 @@
-export type VisualType = "mermaid" | "svg" | "premade" | "none";
+// types/chat.ts
 
-export type SVGShape = {
-  type: "rect" | "circle" | "ellipse";
-  x: number;
-  y: number;
-  width?: number;
-  height?: number;
-  radius?: number;
-  fill: string;
-  label: string;
-  labelX: number;
-  labelY: number;
-};
-
-export type SVGArrow = {
-  from: [number, number];
-  to: [number, number];
-  label?: string;
-};
-
-export type SVGData = {
-  shapes: SVGShape[];
-  arrows: SVGArrow[];
-};
-
-export type VisualData = {
-  type: VisualType;
-  data: string | SVGData | null;  // Mermaid code, SVG data, or asset name
-  fallback_text: string;
-};
-
-export type Slide = {
+export interface Slide {
   slide_number: number;
   title: string;
   content: string;
-  visual_description: string;
-  full_content: string;
-  topic: string;
+  visual_description?: string;
+  full_content?: string;
+  topic?: string;
   key_points?: string[];
-  visual?: VisualData;
-};
+  code_example?: string;
+}
 
-export type LearningState = {
-  messages?: Array<{ type: string; content: string }>;
-  slides?: Slide[];
-  current_stage?: string;
-};
-
-export type WSMessage =
-  | { type: "connection"; message: string; message_id?: string }
-  | { type: "status"; message: string; stage: string; message_id?: string }
-  | { type: "stream_start"; message: string; stage: string; message_id?: string }
-  | { type: "stream_end"; message_id?: string }
-  | { type: "progress"; stage: string; current_stage?: string; message_id?: string }
-  | { type: "update"; data: LearningState; message_id?: string }
-  | { type: "interrupt"; message: string; interrupt_id: string; stage: string; message_id?: string }
-  | { type: "response"; message: string; slide: Slide; stage: string; current_stage?: string; message_id?: string }
-  | { type: "error"; error: string; message?: string; message_id?: string }
-  | { type: "message"; content: string }
-  | { type: "resume"; content: string }
-  | { type: "ping" }
-  | { type: "pong" };
-
-
-
-export type ChatMessage = {
+export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  id?: string;
   isMarkdown?: boolean;
-  id?: string; // Unique message ID from backend or generated locally
-};
+  isStreaming?: boolean; // ✨ NEW: Indicate if message is being streamed
+  timestamp?: string;
+}
+
+export interface SessionInfo {
+  current_topic?: string;
+  topics_covered: string[];
+  topics_remaining: string[];
+  understanding_level: 'beginner' | 'intermediate' | 'advanced';
+  assessments_passed: number;
+  questions_asked: number;
+  user_name?: string;
+  learning_goal?: string;
+  current_slide_index: number;
+  total_slides: number;
+}
+
+// WebSocket Message Types
+export type WSMessage = 
+  // Client -> Server
+  | { type: 'message'; content: string }
+  | { type: 'resume'; answer: string }
+  | { type: 'ping' }
+  
+  // Server -> Client (New Token Streaming Types)
+  | {
+      type: 'stream_start';
+      message?: string;
+      stage?: string;
+      message_id?: string;
+    }
+  | {
+      type: 'token';
+      content: string;
+      node?: string;
+      accumulated_length?: number;
+      message_id?: string;
+    }
+  | {
+      type: 'node_start';
+      node: string;
+      message_id?: string;
+    }
+  | {
+      type: 'node_complete';
+      node: string;
+      message_id?: string;
+    }
+  | {
+      type: 'stage_change';
+      stage: string;
+      node?: string;
+      message_id?: string;
+    }
+  | {
+      type: 'slide';
+      slide: Slide;
+      slide_index: number;
+      total_slides: number;
+      message_id?: string;
+    }
+  | {
+      type: 'response_complete';
+      message: string;
+      slide?: Slide;
+      thread_id?: string;
+      stage?: string;
+      current_topic?: string;
+      topics_covered?: string[];
+      topics_remaining?: string[];
+      understanding_level?: 'beginner' | 'intermediate' | 'advanced';
+      assessments_passed?: number;
+      questions_asked?: number;
+      user_name?: string;
+      learning_goal?: string;
+      current_slide_index?: number;
+      total_slides?: number;
+      message_id?: string;
+    }
+  | {
+      type: 'stream_end';
+      total_chunks?: number;
+      message_length?: number;
+      message_id?: string;
+    }
+  | {
+      type: 'pong';
+      timestamp?: string;
+      message_id?: string;
+    }
+  | {
+      type: 'error';
+      message: string;
+      technical_details?: string;
+      message_id?: string;
+    }
+  
+  // Legacy types (backwards compatibility)
+  | {
+      type: 'progress';
+      stage?: string;
+      current_stage?: string;
+      messages_count?: number;
+      message_id?: string;
+    }
+  | {
+      type: 'status';
+      message: string;
+      message_id?: string;
+    }
+  | {
+      type: 'update';
+      data: {
+        messages?: Array<{ type: string; content: string }>;
+        slides?: Slide[];
+        current_stage?: string;
+      };
+      message_id?: string;
+    }
+  | {
+      type: 'interrupt';
+      message?: string;
+      interrupt_id?: string;
+      stage: string;
+      thread_id?: string;
+      current_slide_index?: number;
+      total_slides?: number;
+      message_id?: string;
+    }
+  | {
+      type: 'response';
+      message?: string;
+      slide?: Slide;
+      thread_id?: string;
+      current_stage?: string;
+      stage?: string;
+      current_topic?: string;
+      topics_covered?: string[];
+      current_slide_index?: number;
+      total_slides?: number;
+      message_id?: string;
+    };

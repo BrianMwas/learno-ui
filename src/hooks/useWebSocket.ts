@@ -15,6 +15,7 @@ export function useWebSocket() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingSlide, setIsLoadingSlide] = useState(false);
   const [topicsCovered, setTopicsCovered] = useState<string[]>([]);
+  const [currentNode, setCurrentNode] = useState<string | null>(null);
 
   // --- internal refs ---
   const wsRef = useRef<WebSocket | null>(null);
@@ -24,9 +25,13 @@ export function useWebSocket() {
   const seenMessageIds = useRef<Set<string>>(new Set());
   const messageBuffer = useRef<WSMessage[]>([]);
   const isManuallyClosed = useRef(false);
+  
+  // ✨ Track streaming state
+  const streamingMessageRef = useRef<string>('');
+  const streamingMessageIdRef = useRef<string | null>(null);
 
   const MAX_RECONNECT_ATTEMPTS = 10;
-  const RECONNECT_DELAY = 1000; // base
+  const RECONNECT_DELAY = 1000;
   const HEARTBEAT_INTERVAL = 30000;
 
   // ✅ Message deduplication
@@ -41,6 +46,61 @@ export function useWebSocket() {
     return false;
   }, []);
 
+  // ✨ Start streaming a new message
+  const startStreamingMessage = useCallback(() => {
+    streamingMessageRef.current = '';
+    streamingMessageIdRef.current = uuidv4();
+    
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: '',
+      id: streamingMessageIdRef.current!,
+      isMarkdown: true,
+      isStreaming: true
+    }]);
+  }, []);
+
+  // ✨ Update streaming message with new token
+  const appendToken = useCallback((token: string) => {
+    streamingMessageRef.current += token;
+    
+    setMessages(prev => {
+      const lastMsg = prev[prev.length - 1];
+      if (lastMsg && lastMsg.id === streamingMessageIdRef.current) {
+        return [
+          ...prev.slice(0, -1),
+          {
+            ...lastMsg,
+            content: streamingMessageRef.current,
+            isStreaming: true
+          }
+        ];
+      }
+      return prev;
+    });
+  }, []);
+
+  // ✨ Finalize streaming message
+  const finalizeStreamingMessage = useCallback(() => {
+    setMessages(prev => {
+      const lastMsg = prev[prev.length - 1];
+      if (lastMsg && lastMsg.id === streamingMessageIdRef.current) {
+        return [
+          ...prev.slice(0, -1),
+          {
+            ...lastMsg,
+            content: streamingMessageRef.current,
+            isStreaming: false
+          }
+        ];
+      }
+      return prev;
+    });
+    
+    streamingMessageRef.current = '';
+    streamingMessageIdRef.current = null;
+  }, []);
+
   // ✅ Main message handler
   const handleWebSocketMessage = useCallback((message: WSMessage) => {
     if ('message_id' in message && message.message_id && isMessageSeen(message.message_id)) {
@@ -51,74 +111,183 @@ export function useWebSocket() {
       case 'pong':
         console.log('💓 Heartbeat pong');
         return;
+
       case 'stream_start':
-        setTransientMessage(message.message);
+        console.log('🎬 Stream started:', message.message);
+        setTransientMessage(message.message ?? null); // FIX: Handle undefined
         setIsLoading(true);
-        setStage(message.stage);
+        if (message.stage) setStage(message.stage);
+        startStreamingMessage();
         break;
-      case 'progress':
-        setStage(message.current_stage || message.stage);
+
+      case 'node_start':
+        console.log('🔧 Node started:', message.node);
+        setCurrentNode(message.node || null);
         break;
-      case 'status':
-        setTransientMessage(message.message);
+
+      case 'node_complete':
+        console.log('✅ Node completed:', message.node);
+        break;
+
+      case 'token':
+        console.log('📝 Token received:', message.content?.substring(0, 20));
+        if (message.content) {
+          appendToken(message.content);
+        }
+        break;
+
+      case 'stage_change':
+        console.log('🔄 Stage changed:', message.stage);
+        setStage(message.stage || 'teaching');
+        setTransientMessage(`Moving to: ${message.stage}`);
         setTimeout(() => setTransientMessage(null), 2000);
         break;
-      case 'update': {
-        const latestMsg = message.data.messages?.slice(-1)[0];
-        if (latestMsg?.type === 'ai' && latestMsg.content) {
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: latestMsg.content,
-            id: message.message_id,
-            isMarkdown: true
-          }]);
-        }
-        if (message.data.slides?.length) {
-          const latestSlide = message.data.slides.slice(-1)[0];
-          setIsLoadingSlide(true);
-          setCurrentSlide(latestSlide);
-          setTimeout(() => setIsLoadingSlide(false), 500);
-          if (latestSlide.topic && !topicsCovered.includes(latestSlide.topic)) {
-            setTopicsCovered(prev => [...prev, latestSlide.topic]);
+
+      case 'slide':
+        console.log('🖼️ Slide updated:', message.slide?.title);
+        setIsLoadingSlide(true);
+        setCurrentSlide(message.slide || null);
+        setTimeout(() => setIsLoadingSlide(false), 500);
+        
+        // FIX: Type-safe topic handling
+        if (message.slide?.topic) {
+          const topic = message.slide.topic;
+          if (!topicsCovered.includes(topic)) {
+            setTopicsCovered(prev => [...prev, topic]);
           }
         }
-        setStage(message.data.current_stage || stage);
         break;
-      }
-      case 'interrupt':
-        setIsLoading(false);
-        setIsWaitingForInput(true);
-        setStage(message.stage);
-        if (message.message) {
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: message.message,
-            id: message.message_id,
-            isMarkdown: true
-          }]);
-        }
-        break;
-      case 'response':
+
+      case 'response_complete':
+        console.log('✅ Response complete');
         setIsLoading(false);
         setIsWaitingForInput(false);
-        if (message.message) {
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: message.message,
-            id: message.message_id,
-            isMarkdown: true
-          }]);
-        }
+        setCurrentNode(null);
+        
+        finalizeStreamingMessage();
+        
         if (message.slide) {
           setIsLoadingSlide(true);
           setCurrentSlide(message.slide);
           setTimeout(() => setIsLoadingSlide(false), 500);
-          if (message.slide.topic && !topicsCovered.includes(message.slide.topic)) {
-            setTopicsCovered(prev => [...prev, message.slide.topic]);
+          
+          // FIX: Type-safe topic handling
+          if (message.slide.topic) {
+            const topic = message.slide.topic;
+            if (!topicsCovered.includes(topic)) {
+              setTopicsCovered(prev => [...prev, topic]);
+            }
           }
         }
-        setStage(message.current_stage || message.stage);
+        
+        if (message.stage) {
+          setStage(message.stage);
+        }
         break;
+
+      case 'stream_end':
+        console.log('🏁 Stream ended');
+        setIsLoading(false);
+        setTransientMessage(null);
+        setCurrentNode(null);
+        break;
+
+      case 'progress':
+        // FIX: Type-safe stage handling
+        const progressStage = message.current_stage || message.stage;
+        if (progressStage) {
+          setStage(progressStage);
+        }
+        break;
+
+      case 'status':
+        setTransientMessage(message.message ?? null); // FIX: Handle undefined
+        setTimeout(() => setTransientMessage(null), 2000);
+        break;
+
+      case 'update': {
+        const latestMsg = message.data?.messages?.slice(-1)[0];
+        if (latestMsg?.type === 'ai' && latestMsg.content) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: latestMsg.content,
+            id: message.message_id || uuidv4(),
+            isMarkdown: true
+          }]);
+        }
+        if (message.data?.slides?.length) {
+          const latestSlide = message.data.slides.slice(-1)[0];
+          setIsLoadingSlide(true);
+          setCurrentSlide(latestSlide);
+          setTimeout(() => setIsLoadingSlide(false), 500);
+          
+          // FIX: Type-safe topic handling
+          if (latestSlide.topic) {
+            const topic = latestSlide.topic;
+            if (!topicsCovered.includes(topic)) {
+              setTopicsCovered(prev => [...prev, topic]);
+            }
+          }
+        }
+        if (message.data?.current_stage) {
+          setStage(message.data.current_stage);
+        }
+        break;
+      }
+
+      case 'interrupt':
+        setIsLoading(false);
+        setIsWaitingForInput(true);
+        setStage(message.stage || 'awaiting_input');
+        
+        // FIX: Type-safe message handling
+        if (message.message) {
+          const content = message.message;
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: content,
+            id: message.message_id || uuidv4(),
+            isMarkdown: true
+          }]);
+        }
+        break;
+
+      case 'response':
+        setIsLoading(false);
+        setIsWaitingForInput(false);
+        
+        // FIX: Type-safe message handling
+        if (message.message) {
+          const content = message.message;
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: content,
+            id: message.message_id || uuidv4(),
+            isMarkdown: true
+          }]);
+        }
+        
+        if (message.slide) {
+          setIsLoadingSlide(true);
+          setCurrentSlide(message.slide);
+          setTimeout(() => setIsLoadingSlide(false), 500);
+          
+          // FIX: Type-safe topic handling
+          if (message.slide.topic) {
+            const topic = message.slide.topic;
+            if (!topicsCovered.includes(topic)) {
+              setTopicsCovered(prev => [...prev, topic]);
+            }
+          }
+        }
+        
+        // FIX: Type-safe stage handling
+        const responseStage = message.current_stage || message.stage;
+        if (responseStage) {
+          setStage(responseStage);
+        }
+        break;
+
       case 'error':
         console.error('❌ Error:', message.message);
         setMessages(prev => [...prev, {
@@ -127,15 +296,23 @@ export function useWebSocket() {
           isMarkdown: false
         }]);
         setIsLoading(false);
+        setCurrentNode(null);
+        
+        if (streamingMessageIdRef.current) {
+          finalizeStreamingMessage();
+        }
         break;
-      case 'stream_end':
-        setIsLoading(false);
-        setTransientMessage(null);
-        break;
+
       default:
         console.warn('Unknown message type:', message.type);
     }
-  }, [isMessageSeen, stage, topicsCovered]);
+  }, [
+    isMessageSeen, 
+    topicsCovered, 
+    startStreamingMessage, 
+    appendToken, 
+    finalizeStreamingMessage
+  ]);
 
   // ✅ Start heartbeat
   const startHeartbeat = useCallback(() => {
@@ -175,7 +352,7 @@ export function useWebSocket() {
   const connect = useCallback(() => {
     if (isManuallyClosed.current) return;
 
-    const wsUrl = `ws://localhost:8000/api/v1/ws/chat/${threadId}`;
+    const wsUrl = `wss://learno-production.up.railway.app/api/v1/ws/chat/${threadId}`;
     console.log('🔌 Connecting to', wsUrl);
     const socket = new WebSocket(wsUrl);
 
@@ -232,10 +409,9 @@ export function useWebSocket() {
 
   // ✅ Public actions
   const sendMessage = useCallback((message: string) => {
-    const msg: WSMessage = {
-      type: isWaitingForInput ? 'resume' : 'message',
-      content: message
-    };
+    const msg: WSMessage = isWaitingForInput
+      ? { type: 'resume', answer: message }
+      : { type: 'message', content: message };
     sendSafe(msg);
     setMessages(prev => [...prev, {
       role: 'user',
@@ -252,6 +428,9 @@ export function useWebSocket() {
     setCurrentSlide(null);
     setStage('introduction');
     setTopicsCovered([]);
+    setCurrentNode(null);
+    streamingMessageRef.current = '';
+    streamingMessageIdRef.current = null;
   }, []);
 
   return {
@@ -261,6 +440,7 @@ export function useWebSocket() {
     messages,
     currentSlide,
     stage,
+    currentNode,
     isWaitingForInput,
     transientMessage,
     isLoading,
