@@ -39,8 +39,18 @@ function SlidesSkeleton() {
 
 export function SlidePanel({ currentSlide, isLoading = false }: SlidePanelProps) {
   return (
-    <div className="w-[69%] flex items-center justify-center">
-      <div className="w-full h-full border border-black/10 rounded-[24px] flex flex-col bg-white overflow-hidden">
+    <div className="w-[69%] flex flex-col">
+      {/* Learning Topic Header - Outside the box */}
+      {currentSlide && (
+        <div className="mb-2 px-2">
+          <h2 className="text-sm font-semibold text-black/70 flex items-center gap-2">
+            <span className="text-blue-600">Learning:</span>
+            <span className="text-black">{currentSlide.topic}</span>
+          </h2>
+        </div>
+      )}
+
+      <div className="flex-1 border border-black/10 rounded-[24px] flex flex-col bg-white overflow-hidden">
         <ScrollArea className="flex-1">
           <div className="p-8">
             {isLoading ? (
@@ -48,14 +58,16 @@ export function SlidePanel({ currentSlide, isLoading = false }: SlidePanelProps)
             ) : currentSlide ? (
               <TextAnimate>
                 <div className="space-y-4">
-                  <div className="border-b border-black/10 pb-4">
-                    <div className="text-xs text-black/40 mb-2">
-                      Slide {currentSlide.slide_number} • {currentSlide.topic}
+                  <div className="border-b border-blue-100 pb-4">
+                    <div className="text-xs text-black/40 mb-2 flex items-center gap-2">
+                      <span className="text-blue-600 font-medium">Slide {currentSlide.slide_number}</span>
+                      <span>•</span>
+                      <span>{currentSlide.topic}</span>
                     </div>
                     <h1 className="text-3xl font-bold text-black mb-3">
                       {currentSlide.title}
                     </h1>
-                    <p className="text-sm text-black/60 italic">
+                    <p className="text-sm text-blue-900/60 italic">
                       {currentSlide.visual_description}
                     </p>
                   </div>

@@ -16,6 +16,7 @@ interface ChatPanelProps {
   isLoading: boolean;
   isWaitingForInput: boolean;
   threadId: string;
+  stage: string;
   transientMessage: string | null;
   onSendMessage: (message: string) => void;
   onNewSession: () => void;
@@ -31,6 +32,7 @@ export function ChatPanel({
   isLoading,
   isWaitingForInput,
   threadId,
+  stage,
   transientMessage,
   onSendMessage,
   onNewSession,
@@ -60,14 +62,9 @@ export function ChatPanel({
       <div className="w-full h-full border border-black/10 rounded-[24px] flex flex-col bg-white overflow-hidden">
         {/* Header */}
         <div className="p-4 border-b border-black/10 flex justify-between items-center flex-shrink-0">
-          <div className="text-xs">
-            {isConnected ? (
-              <span className="text-black/60">● Connected</span>
-            ) : (
-              <span className="text-black/40">● Disconnected</span>
-            )}
-            <span className="ml-2 text-black/40">Session: {threadId.slice(0, 8)}</span>
-          </div>
+          <h2 className="text-lg font-semibold text-black capitalize">
+            {stage.replace('_', ' ')}
+          </h2>
           <Button
             onClick={onNewSession}
             variant="outline"
@@ -80,9 +77,9 @@ export function ChatPanel({
 
         {/* Transient Message Banner */}
         {transientMessage && (
-          <div className="mx-4 mt-3 p-3 border-l-2 border-black bg-black/5 rounded-r-lg animate-pulse flex-shrink-0">
-            <p className="text-black text-xs flex items-center gap-2">
-              <Spinner className="size-3" />
+          <div className="mx-4 mt-3 p-3 border-l-2 border-blue-600 bg-blue-50 rounded-r-lg animate-pulse flex-shrink-0">
+            <p className="text-blue-900 text-xs flex items-center gap-2 font-medium">
+              <Spinner className="size-3 text-blue-600" />
               {transientMessage}
             </p>
           </div>

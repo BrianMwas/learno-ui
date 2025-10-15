@@ -13,6 +13,7 @@ export default function Home() {
     isLoadingSlide,
     isWaitingForInput,
     threadId,
+    stage,
     transientMessage,
     sendMessage,
     resetSession,
@@ -27,6 +28,7 @@ export default function Home() {
         isLoading={isLoading}
         isWaitingForInput={isWaitingForInput}
         threadId={threadId}
+        stage={stage}
         transientMessage={transientMessage}
         onSendMessage={sendMessage}
         onNewSession={resetSession}
