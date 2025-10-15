@@ -36,18 +36,38 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
   const wsRef = useRef<WebSocket | null>(null);
 
   const handleWebSocketMessage = useCallback((message: WSMessage) => {
-    console.log('Received:', message);
+    console.log('📩 Received:', message.type, message);
 
     switch (message.type) {
       case 'connection':
-        setMessages([{
-          role: 'assistant',
-          content: 'Connecting to Meemo...',
-          isMarkdown: false
-        }]);
+        // Save thread_id if provided, show connection status
+        if (message.thread_id) {
+          console.log('Thread ID from server:', message.thread_id);
+        }
+        setIsConnected(true);
+        break;
+
+      case 'stream_start':
+        // Show transient "Processing..." message
+        console.log('🔄 Stream started');
+        setTransientMessage(message.message);
+        setIsLoading(true);
+        setStage(message.stage);
+        break;
+
+      case 'progress':
+        // Optional: Update progress indicator
+        // No slide data yet, just stage info
+        console.log('⏳ Progress update');
+        if (message.current_stage) {
+          setStage(message.current_stage);
+        } else {
+          setStage(message.stage);
+        }
         break;
 
       case 'status':
+        // Transient status message (fallback for stream_start)
         setTransientMessage(message.message);
         setStage(message.stage);
         setTimeout(() => setTransientMessage(null), 2000);
@@ -84,10 +104,14 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
         break;
 
       case 'interrupt':
+        // 🔥 CRITICAL: Set waiting flag
+        console.log('⚠️ Interrupt - waiting for user input');
         setIsLoading(false);
         setIsWaitingForInput(true);
         setStage(message.stage);
+        setTransientMessage(null);
 
+        // Add AI's message (the question they're asking)
         if (message.message) {
           setMessages(prev => [...prev, {
             role: 'assistant',
@@ -95,12 +119,15 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
             isMarkdown: true
           }]);
         }
-        setTransientMessage(null);
         break;
 
       case 'response':
+        // Final response with slide
+        console.log('✅ Final response received');
         setIsLoading(false);
         setIsWaitingForInput(false);
+        setTransientMessage(null);
+
         setMessages(prev => [...prev, {
           role: 'assistant',
           content: message.message,
@@ -108,17 +135,33 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
         }]);
 
         if (message.slide) {
+          setIsLoadingSlide(true);
           setCurrentSlide(message.slide);
+          setTimeout(() => setIsLoadingSlide(false), 500);
         }
-        setStage(message.stage);
+
+        if (message.current_stage) {
+          setStage(message.current_stage);
+        } else {
+          setStage(message.stage);
+        }
+        break;
+
+      case 'stream_end':
+        // Cleanup after streaming
+        console.log('🏁 Stream ended');
+        setIsLoading(false);
+        setTransientMessage(null);
         break;
 
       case 'error':
+        // Handle error
+        console.error('❌ Error:', message.error);
         setIsLoading(false);
         setTransientMessage(null);
         setMessages(prev => [...prev, {
           role: 'system',
-          content: `Error: ${message.error}`,
+          content: `Error: ${message.message || message.error}`,
           isMarkdown: false
         }]);
         break;
@@ -126,14 +169,13 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
   }, [stage, threadId]);
 
   useEffect(() => {
-    if (!threadId) return;
-
     let reconnectTimeout: NodeJS.Timeout;
 
     const connectWebSocket = () => {
       try {
-        console.log('Attempting to connect to WebSocket with thread_id:', threadId);
-        const websocket = new WebSocket(`ws://localhost:8000/ws/chat/${threadId}`);
+        console.log('Attempting to connect to WebSocket...');
+        console.log('Will use thread_id in messages:', threadId);
+        const websocket = new WebSocket('ws://localhost:8000/ws/chat');
 
         websocket.onopen = () => {
           console.log('✅ WebSocket connected successfully');
@@ -183,7 +225,7 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
         wsRef.current.close();
       }
     };
-  }, [threadId, handleWebSocketMessage]);
+  }, [handleWebSocketMessage]);
 
   const sendMessage = useCallback((userMessage: string) => {
     if (!userMessage.trim() || !ws || !isConnected) return;
