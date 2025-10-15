@@ -56,7 +56,13 @@ export type WSMessage =
   | { type: "update"; data: LearningState; message_id?: string }
   | { type: "interrupt"; message: string; interrupt_id: string; stage: string; message_id?: string }
   | { type: "response"; message: string; slide: Slide; stage: string; current_stage?: string; message_id?: string }
-  | { type: "error"; error: string; message?: string; message_id?: string };
+  | { type: "error"; error: string; message?: string; message_id?: string }
+  | { type: "message"; content: string }
+  | { type: "resume"; content: string }
+  | { type: "ping" }
+  | { type: "pong" };
+
+
 
 export type ChatMessage = {
   role: 'user' | 'assistant' | 'system';

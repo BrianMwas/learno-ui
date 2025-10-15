@@ -4,28 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { WSMessage, ChatMessage, Slide } from '@/types/chat';
 
-interface WebSocketState {
-  ws: WebSocket | null;
-  threadId: string;
-  isConnected: boolean;
-  messages: ChatMessage[];
-  currentSlide: Slide | null;
-  stage: string;
-  isWaitingForInput: boolean;
-  transientMessage: string | null;
-  isLoading: boolean;
-  isLoadingSlide: boolean;
-  topicsCovered: string[];
- 
-}
-
-interface WebSocketActions {
-  sendMessage: (message: string) => void;
-  resetSession: () => void;
-}
-
-export function useWebSocket(): WebSocketState & WebSocketActions {
-  const [ws, setWs] = useState<WebSocket | null>(null);
+export function useWebSocket() {
   const [threadId, setThreadId] = useState<string>(() => uuidv4());
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -36,325 +15,247 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingSlide, setIsLoadingSlide] = useState(false);
   const [topicsCovered, setTopicsCovered] = useState<string[]>([]);
-  // const [totalTopics, setTotalTopics] = useState<number>(5);
-  const wsRef = useRef<WebSocket | null>(null);
-  const seenMessageIds = useRef<Set<string>>(new Set());
 
-  // Helper to check if we've seen this message before
-  const isMessageSeen = useCallback((messageId?: string) => {
-    if (messageId) {
-      if (seenMessageIds.current.has(messageId)) {
-        console.log('⏭️  Skipping duplicate message:', messageId);
-        return true;
-      }
-      seenMessageIds.current.add(messageId);
-      return false;
+  // --- internal refs ---
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectAttempts = useRef(0);
+  const heartbeatTimer = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimer = useRef<NodeJS.Timeout | null>(null);
+  const seenMessageIds = useRef<Set<string>>(new Set());
+  const messageBuffer = useRef<WSMessage[]>([]);
+  const isManuallyClosed = useRef(false);
+
+  const MAX_RECONNECT_ATTEMPTS = 10;
+  const RECONNECT_DELAY = 1000; // base
+  const HEARTBEAT_INTERVAL = 30000;
+
+  // ✅ Message deduplication
+  const isMessageSeen = useCallback((id?: string) => {
+    if (!id) return false;
+    if (seenMessageIds.current.has(id)) return true;
+    seenMessageIds.current.add(id);
+    if (seenMessageIds.current.size > 100) {
+      const arr = Array.from(seenMessageIds.current);
+      arr.slice(0, arr.length - 100).forEach(i => seenMessageIds.current.delete(i));
     }
-    // Fallback to content-based check if no ID provided (backward compatibility)
     return false;
   }, []);
 
+  // ✅ Main message handler
   const handleWebSocketMessage = useCallback((message: WSMessage) => {
-    console.log('📩 Received:', message.type, message);
+    if ('message_id' in message && message.message_id && isMessageSeen(message.message_id)) {
+      return;
+    }
 
     switch (message.type) {
+      case 'pong':
+        console.log('💓 Heartbeat pong');
+        return;
       case 'stream_start':
-        // Show transient "Processing..." message
-        console.log('🔄 Stream started');
         setTransientMessage(message.message);
         setIsLoading(true);
         setStage(message.stage);
         break;
-
       case 'progress':
-        // Optional: Update progress indicator
-        // No slide data yet, just stage info
-        console.log('⏳ Progress update');
-        if (message.current_stage) {
-          setStage(message.current_stage);
-        } else {
-          setStage(message.stage);
-        }
+        setStage(message.current_stage || message.stage);
         break;
-
       case 'status':
-        // Transient status message (fallback for stream_start)
         setTransientMessage(message.message);
-        setStage(message.stage);
         setTimeout(() => setTransientMessage(null), 2000);
         break;
-
-      case 'update':
-        const latestMsg = message.data.messages?.[message.data.messages.length - 1];
+      case 'update': {
+        const latestMsg = message.data.messages?.slice(-1)[0];
         if (latestMsg?.type === 'ai' && latestMsg.content) {
-          // Use message_id if available, otherwise check content
-          const msgId = message.message_id;
-
-          if (isMessageSeen(msgId)) {
-            break; // Skip duplicate
-          }
-
-          setMessages(prev => {
-            const lastMsg = prev[prev.length - 1];
-
-            // Content-based fallback check if no ID
-            if (!msgId) {
-              const messageExists = prev.some(msg =>
-                msg.role === 'assistant' && msg.content === latestMsg.content
-              );
-              if (messageExists) {
-                return prev;
-              }
-            }
-
-            if (lastMsg?.role === 'assistant' && lastMsg.content !== latestMsg.content) {
-              return [...prev.slice(0, -1), {
-                role: 'assistant',
-                content: latestMsg.content,
-                isMarkdown: true,
-                id: msgId
-              }];
-            } else {
-              return [...prev, {
-                role: 'assistant',
-                content: latestMsg.content,
-                isMarkdown: true,
-                id: msgId
-              }];
-            }
-          });
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: latestMsg.content,
+            id: message.message_id,
+            isMarkdown: true
+          }]);
         }
-
-        if (message.data.slides && message.data.slides.length > 0) {
+        if (message.data.slides?.length) {
+          const latestSlide = message.data.slides.slice(-1)[0];
           setIsLoadingSlide(true);
-          const latestSlide = message.data.slides[message.data.slides.length - 1];
           setCurrentSlide(latestSlide);
           setTimeout(() => setIsLoadingSlide(false), 500);
-
-          // Track topics covered
           if (latestSlide.topic && !topicsCovered.includes(latestSlide.topic)) {
             setTopicsCovered(prev => [...prev, latestSlide.topic]);
           }
         }
         setStage(message.data.current_stage || stage);
         break;
-
+      }
       case 'interrupt':
-        // 🔥 CRITICAL: Set waiting flag
-        console.log('⚠️ Interrupt - waiting for user input');
         setIsLoading(false);
         setIsWaitingForInput(true);
         setStage(message.stage);
-        setTransientMessage(null);
-
-        // Add AI's message (the question they're asking)
-        if (message.message && !isMessageSeen(message.message_id)) {
-          setMessages(prev => {
-            // Content-based fallback check if no ID
-            if (!message.message_id) {
-              const messageExists = prev.some(msg =>
-                msg.role === 'assistant' && msg.content === message.message
-              );
-              if (messageExists) {
-                return prev;
-              }
-            }
-            return [...prev, {
-              role: 'assistant',
-              content: message.message,
-              isMarkdown: true,
-              id: message.message_id
-            }];
-          });
+        if (message.message) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: message.message,
+            id: message.message_id,
+            isMarkdown: true
+          }]);
         }
         break;
-
       case 'response':
-        // Final response with slide
-        console.log('✅ Final response received');
         setIsLoading(false);
         setIsWaitingForInput(false);
-        setTransientMessage(null);
-
-        if (!isMessageSeen(message.message_id)) {
-          setMessages(prev => {
-            // Content-based fallback check if no ID
-            if (!message.message_id) {
-              const messageExists = prev.some(msg =>
-                msg.role === 'assistant' && msg.content === message.message
-              );
-              if (messageExists) {
-                return prev;
-              }
-            }
-            return [...prev, {
-              role: 'assistant',
-              content: message.message,
-              isMarkdown: true,
-              id: message.message_id
-            }];
-          });
+        if (message.message) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: message.message,
+            id: message.message_id,
+            isMarkdown: true
+          }]);
         }
-
         if (message.slide) {
           setIsLoadingSlide(true);
           setCurrentSlide(message.slide);
           setTimeout(() => setIsLoadingSlide(false), 500);
-
-          // Track topics covered
           if (message.slide.topic && !topicsCovered.includes(message.slide.topic)) {
             setTopicsCovered(prev => [...prev, message.slide.topic]);
           }
         }
-
-        if (message.current_stage) {
-          setStage(message.current_stage);
-        } else {
-          setStage(message.stage);
-        }
+        setStage(message.current_stage || message.stage);
         break;
-
-      case 'stream_end':
-        // Cleanup after streaming
-        console.log('🏁 Stream ended');
-        setIsLoading(false);
-        setTransientMessage(null);
-        break;
-
       case 'error':
-        // Handle error
-        console.error('❌ Error:', message.error);
-        setIsLoading(false);
-        setTransientMessage(null);
+        console.error('❌ Error:', message.message);
         setMessages(prev => [...prev, {
           role: 'system',
-          content: `Error: ${message.message || message.error}`,
+          content: `Error: ${message.message}`,
           isMarkdown: false
         }]);
+        setIsLoading(false);
         break;
+      case 'stream_end':
+        setIsLoading(false);
+        setTransientMessage(null);
+        break;
+      default:
+        console.warn('Unknown message type:', message.type);
     }
-  }, [stage, threadId]);
+  }, [isMessageSeen, stage, topicsCovered]);
 
-  useEffect(() => {
-    let reconnectTimeout: NodeJS.Timeout;
+  // ✅ Start heartbeat
+  const startHeartbeat = useCallback(() => {
+    stopHeartbeat();
+    heartbeatTimer.current = setInterval(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, HEARTBEAT_INTERVAL);
+  }, []);
 
-    const connectWebSocket = () => {
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatTimer.current) clearInterval(heartbeatTimer.current);
+    heartbeatTimer.current = null;
+  }, []);
+
+  // ✅ Safe send with buffer
+  const sendSafe = useCallback((msg: WSMessage) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(msg));
+    } else {
+      console.log('📦 Buffered message:', msg.type);
+      messageBuffer.current.push(msg);
+    }
+  }, []);
+
+  // ✅ Flush buffer
+  const flushBuffer = useCallback(() => {
+    if (messageBuffer.current.length && wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log(`🚀 Sending ${messageBuffer.current.length} buffered messages`);
+      messageBuffer.current.forEach(m => wsRef.current?.send(JSON.stringify(m)));
+      messageBuffer.current = [];
+    }
+  }, []);
+
+  // ✅ Connect + Reconnect logic
+  const connect = useCallback(() => {
+    if (isManuallyClosed.current) return;
+
+    const wsUrl = `ws://localhost:8000/api/v1/ws/chat/${threadId}`;
+    console.log('🔌 Connecting to', wsUrl);
+    const socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => {
+      console.log('✅ Connected');
+      setIsConnected(true);
+      reconnectAttempts.current = 0;
+      wsRef.current = socket;
+      flushBuffer();
+      startHeartbeat();
+      setIsLoading(true);
+    };
+
+    socket.onmessage = event => {
       try {
-        console.log('Attempting to connect to WebSocket...');
-        console.log('Using thread_id:', threadId);
-        const wsUrl = `ws://localhost:8000/api/v1/ws/chat/${threadId}`;
-        console.log('Connecting to:', wsUrl);
-        const websocket = new WebSocket(wsUrl);
-
-        websocket.onopen = () => {
-          console.log('✅ WebSocket connected successfully');
-          setIsConnected(true);
-          setIsLoading(true);  // Show spinner while waiting for first message
-          wsRef.current = websocket;
-          setWs(websocket);
-        };
-
-        websocket.onmessage = (event) => {
-          try {
-            handleWebSocketMessage(JSON.parse(event.data));
-          } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
-          }
-        };
-
-        websocket.onerror = (error) => {
-          console.error('❌ WebSocket error:', error);
-          console.log('Make sure your backend server is running on http://localhost:8000');
-          setIsConnected(false);
-        };
-
-        websocket.onclose = (event) => {
-          console.log('WebSocket disconnected. Code:', event.code, 'Reason:', event.reason);
-          setIsConnected(false);
-          wsRef.current = null;
-          setWs(null);
-
-          // Only auto-reconnect on abnormal closures (not normal close or going away)
-          if (event.code !== 1000 && event.code !== 1001) {
-            console.log('Attempting to reconnect in 3 seconds...');
-            reconnectTimeout = setTimeout(connectWebSocket, 3000);
-          } else {
-            console.log('WebSocket closed normally. Not reconnecting.');
-          }
-        };
-      } catch (error) {
-        console.error('Failed to create WebSocket connection:', error);
-        setIsConnected(false);
-        reconnectTimeout = setTimeout(connectWebSocket, 3000);
+        handleWebSocketMessage(JSON.parse(event.data));
+      } catch (e) {
+        console.error('Error parsing WebSocket message', e);
       }
     };
 
-    connectWebSocket();
+    socket.onerror = err => {
+      console.error('WebSocket error', err);
+      setIsConnected(false);
+    };
 
+    socket.onclose = event => {
+      console.warn('❌ Disconnected', event.code, event.reason);
+      setIsConnected(false);
+      stopHeartbeat();
+      wsRef.current = null;
+
+      if (!isManuallyClosed.current && reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
+        const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts.current);
+        console.log(`⏳ Reconnecting in ${delay}ms`);
+        reconnectTimer.current = setTimeout(connect, delay);
+        reconnectAttempts.current++;
+      } else {
+        console.error('❌ Max reconnect attempts reached');
+      }
+    };
+  }, [handleWebSocketMessage, startHeartbeat, stopHeartbeat, flushBuffer, threadId]);
+
+  // ✅ Lifecycle
+  useEffect(() => {
+    connect();
     return () => {
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      isManuallyClosed.current = true;
+      stopHeartbeat();
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      wsRef.current?.close();
     };
-  }, [handleWebSocketMessage]);
+  }, [connect, stopHeartbeat]);
 
-  const sendMessage = useCallback((userMessage: string) => {
-    if (!userMessage.trim() || !ws || !isConnected) return;
-
-    setIsLoading(true);
-
-    // Generate a unique ID for user messages
-    const userMsgId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
+  // ✅ Public actions
+  const sendMessage = useCallback((message: string) => {
+    const msg: WSMessage = {
+      type: isWaitingForInput ? 'resume' : 'message',
+      content: message
+    };
+    sendSafe(msg);
     setMessages(prev => [...prev, {
       role: 'user',
-      content: userMessage,
+      content: message,
       isMarkdown: false,
-      id: userMsgId
+      id: uuidv4()
     }]);
-
-    if (isWaitingForInput) {
-      ws.send(JSON.stringify({
-        type: 'resume',
-        answer: userMessage
-      }));
-      setIsWaitingForInput(false);
-    } else {
-      ws.send(JSON.stringify({
-        type: 'chat',
-        message: userMessage
-      }));
-    }
-  }, [ws, isConnected, isWaitingForInput, threadId]);
+    setIsWaitingForInput(false);
+  }, [isWaitingForInput, sendSafe]);
 
   const resetSession = useCallback(() => {
-    if (ws) {
-      ws.close();
-    }
-
-    // Generate new thread ID for new session
-    const newThreadId = uuidv4();
-    console.log('Starting new session with thread_id:', newThreadId);
-
-    // Clear seen message IDs for new session
-    seenMessageIds.current.clear();
-
-    setThreadId(newThreadId);
+    setThreadId(uuidv4());
     setMessages([]);
     setCurrentSlide(null);
     setStage('introduction');
-    setIsWaitingForInput(false);
-    setTransientMessage(null);
-    setIsLoading(false);
-    setIsLoadingSlide(false);
     setTopicsCovered([]);
-  }, [ws]);
+  }, []);
 
   return {
-    ws,
+    ws: wsRef.current,
     threadId,
     isConnected,
     messages,
@@ -366,6 +267,6 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
     isLoadingSlide,
     topicsCovered,
     sendMessage,
-    resetSession,
+    resetSession
   };
 }
