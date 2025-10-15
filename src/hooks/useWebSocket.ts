@@ -38,6 +38,21 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
   const [topicsCovered, setTopicsCovered] = useState<string[]>([]);
   const [totalTopics, setTotalTopics] = useState<number>(5);
   const wsRef = useRef<WebSocket | null>(null);
+  const seenMessageIds = useRef<Set<string>>(new Set());
+
+  // Helper to check if we've seen this message before
+  const isMessageSeen = useCallback((messageId?: string, content?: string) => {
+    if (messageId) {
+      if (seenMessageIds.current.has(messageId)) {
+        console.log('⏭️  Skipping duplicate message:', messageId);
+        return true;
+      }
+      seenMessageIds.current.add(messageId);
+      return false;
+    }
+    // Fallback to content-based check if no ID provided (backward compatibility)
+    return false;
+  }, []);
 
   const handleWebSocketMessage = useCallback((message: WSMessage) => {
     console.log('📩 Received:', message.type, message);
@@ -72,19 +87,39 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
       case 'update':
         const latestMsg = message.data.messages?.[message.data.messages.length - 1];
         if (latestMsg?.type === 'ai' && latestMsg.content) {
+          // Use message_id if available, otherwise check content
+          const msgId = message.message_id;
+
+          if (isMessageSeen(msgId, latestMsg.content)) {
+            break; // Skip duplicate
+          }
+
           setMessages(prev => {
             const lastMsg = prev[prev.length - 1];
-            if (lastMsg?.role === 'assistant') {
+
+            // Content-based fallback check if no ID
+            if (!msgId) {
+              const messageExists = prev.some(msg =>
+                msg.role === 'assistant' && msg.content === latestMsg.content
+              );
+              if (messageExists) {
+                return prev;
+              }
+            }
+
+            if (lastMsg?.role === 'assistant' && lastMsg.content !== latestMsg.content) {
               return [...prev.slice(0, -1), {
                 role: 'assistant',
                 content: latestMsg.content,
-                isMarkdown: true
+                isMarkdown: true,
+                id: msgId
               }];
             } else {
               return [...prev, {
                 role: 'assistant',
                 content: latestMsg.content,
-                isMarkdown: true
+                isMarkdown: true,
+                id: msgId
               }];
             }
           });
@@ -113,12 +148,24 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
         setTransientMessage(null);
 
         // Add AI's message (the question they're asking)
-        if (message.message) {
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: message.message,
-            isMarkdown: true
-          }]);
+        if (message.message && !isMessageSeen(message.message_id, message.message)) {
+          setMessages(prev => {
+            // Content-based fallback check if no ID
+            if (!message.message_id) {
+              const messageExists = prev.some(msg =>
+                msg.role === 'assistant' && msg.content === message.message
+              );
+              if (messageExists) {
+                return prev;
+              }
+            }
+            return [...prev, {
+              role: 'assistant',
+              content: message.message,
+              isMarkdown: true,
+              id: message.message_id
+            }];
+          });
         }
         break;
 
@@ -129,11 +176,25 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
         setIsWaitingForInput(false);
         setTransientMessage(null);
 
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: message.message,
-          isMarkdown: true
-        }]);
+        if (!isMessageSeen(message.message_id, message.message)) {
+          setMessages(prev => {
+            // Content-based fallback check if no ID
+            if (!message.message_id) {
+              const messageExists = prev.some(msg =>
+                msg.role === 'assistant' && msg.content === message.message
+              );
+              if (messageExists) {
+                return prev;
+              }
+            }
+            return [...prev, {
+              role: 'assistant',
+              content: message.message,
+              isMarkdown: true,
+              id: message.message_id
+            }];
+          });
+        }
 
         if (message.slide) {
           setIsLoadingSlide(true);
@@ -180,8 +241,10 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
     const connectWebSocket = () => {
       try {
         console.log('Attempting to connect to WebSocket...');
-        console.log('Will use thread_id in messages:', threadId);
-        const websocket = new WebSocket('ws://localhost:8000/ws/chat');
+        console.log('Using thread_id:', threadId);
+        const wsUrl = `ws://localhost:8000/api/v1/ws/chat/${threadId}`;
+        console.log('Connecting to:', wsUrl);
+        const websocket = new WebSocket(wsUrl);
 
         websocket.onopen = () => {
           console.log('✅ WebSocket connected successfully');
@@ -211,9 +274,13 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
           wsRef.current = null;
           setWs(null);
 
-          // Auto-reconnect after 3 seconds
-          console.log('Attempting to reconnect in 3 seconds...');
-          reconnectTimeout = setTimeout(connectWebSocket, 3000);
+          // Only auto-reconnect on abnormal closures (not normal close or going away)
+          if (event.code !== 1000 && event.code !== 1001) {
+            console.log('Attempting to reconnect in 3 seconds...');
+            reconnectTimeout = setTimeout(connectWebSocket, 3000);
+          } else {
+            console.log('WebSocket closed normally. Not reconnecting.');
+          }
         };
       } catch (error) {
         console.error('Failed to create WebSocket connection:', error);
@@ -239,24 +306,26 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
 
     setIsLoading(true);
 
+    // Generate a unique ID for user messages
+    const userMsgId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
     setMessages(prev => [...prev, {
       role: 'user',
       content: userMessage,
-      isMarkdown: false
+      isMarkdown: false,
+      id: userMsgId
     }]);
 
-    if (isWaitingForInput && threadId) {
+    if (isWaitingForInput) {
       ws.send(JSON.stringify({
         type: 'resume',
-        thread_id: threadId,
         answer: userMessage
       }));
       setIsWaitingForInput(false);
     } else {
       ws.send(JSON.stringify({
         type: 'chat',
-        message: userMessage,
-        thread_id: threadId
+        message: userMessage
       }));
     }
   }, [ws, isConnected, isWaitingForInput, threadId]);
@@ -269,6 +338,9 @@ export function useWebSocket(): WebSocketState & WebSocketActions {
     // Generate new thread ID for new session
     const newThreadId = uuidv4();
     console.log('Starting new session with thread_id:', newThreadId);
+
+    // Clear seen message IDs for new session
+    seenMessageIds.current.clear();
 
     setThreadId(newThreadId);
     setMessages([]);

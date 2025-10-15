@@ -63,7 +63,7 @@ export function ChatPanel({
         {/* Header */}
         <div className="p-4 border-b border-black/10 flex justify-between items-center flex-shrink-0">
           <h2 className="text-lg font-semibold text-black capitalize">
-            {stage.replace('_', ' ')}
+            {stage ? stage.replace('_', ' ') : 'Chat'}
           </h2>
           <Button
             onClick={onNewSession}

@@ -59,7 +59,7 @@ export function VisualRenderer({ visual }: VisualRendererProps) {
   // None - show fallback text
   if (visual.type === 'none') {
     return (
-      <div className="mt-6 p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl border border-gray-200">
+      <div className="h-full mt-6 p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl border border-gray-200">
         <div className="flex items-start gap-3">
           <span className="text-2xl">🎨</span>
           <div>
@@ -89,7 +89,7 @@ export function VisualRenderer({ visual }: VisualRendererProps) {
   // SVG diagram
   if (visual.type === 'svg' && visual.data) {
     return (
-      <div className="mt-6">
+      <div className="mt-6 h-full">
         <div className="bg-white rounded-2xl border border-black/10 p-6">
           <SVGDiagram data={visual.data as SVGData} />
         </div>
@@ -116,7 +116,7 @@ function SVGDiagram({ data }: { data: SVGData }) {
   const { shapes, arrows } = data;
 
   return (
-    <svg viewBox="0 0 450 350" className="w-full h-auto max-h-[350px]">
+    <svg viewBox="0 0 450 350" className="w-full h-full max-h-[350px]">
       {/* Define arrow marker */}
       <defs>
         <marker

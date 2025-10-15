@@ -48,15 +48,19 @@ export type LearningState = {
 };
 
 export type WSMessage =
-  | { type: "connection"; message: string }
-  | { type: "status"; message: string; stage: string }
-  | { type: "update"; data: LearningState }
-  | { type: "interrupt"; message: string; interrupt_id: string; stage: string }
-  | { type: "response"; message: string; slide: Slide; stage: string }
-  | { type: "error"; error: string };
+  | { type: "connection"; message: string; message_id?: string }
+  | { type: "status"; message: string; stage: string; message_id?: string }
+  | { type: "stream_start"; message: string; stage: string; message_id?: string }
+  | { type: "stream_end"; message_id?: string }
+  | { type: "progress"; stage: string; current_stage?: string; message_id?: string }
+  | { type: "update"; data: LearningState; message_id?: string }
+  | { type: "interrupt"; message: string; interrupt_id: string; stage: string; message_id?: string }
+  | { type: "response"; message: string; slide: Slide; stage: string; current_stage?: string; message_id?: string }
+  | { type: "error"; error: string; message?: string; message_id?: string };
 
 export type ChatMessage = {
   role: 'user' | 'assistant' | 'system';
   content: string;
   isMarkdown?: boolean;
+  id?: string; // Unique message ID from backend or generated locally
 };
