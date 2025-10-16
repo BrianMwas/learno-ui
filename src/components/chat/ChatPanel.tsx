@@ -42,7 +42,7 @@ export function ChatPanel({
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, transientMessage]);
 
   const handleSendMessage = () => {
     if (!inputValue.trim() || !isConnected) return;
@@ -75,20 +75,10 @@ export function ChatPanel({
           </Button>
         </div>
 
-        {/* Transient Message Banner */}
-        {transientMessage && (
-          <div className="mx-4 mt-3 p-3 border-l-2 border-blue-600 bg-blue-50 rounded-r-lg animate-pulse flex-shrink-0">
-            <p className="text-blue-900 text-xs flex items-center gap-2 font-medium">
-              <Spinner className="size-3 text-blue-600" />
-              {transientMessage}
-            </p>
-          </div>
-        )}
-
         {/* Messages Area */}
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-4">
-            {messages.length === 0 ? (
+            {messages.length === 0 && !transientMessage ? (
               <Empty className="border-0 h-full min-h-[400px]">
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
@@ -102,6 +92,7 @@ export function ChatPanel({
               </Empty>
             ) : (
               <>
+                {/* Regular Messages */}
                 {messages.map((message, idx) => (
                   <div
                     key={idx}
@@ -116,24 +107,51 @@ export function ChatPanel({
                           : 'max-w-[85%] bg-white text-black border border-transparent hover:border-black/10'
                       }`}
                     >
-                      
-                        {message.isMarkdown ? (
-                          <AnimatedMarkdown
-                            content={message.content}
-                            animation="blurIn"
-                            sep='word'
-                            animationDuration="0.5s"
-                            animationTimingFunction="ease-in-out"
-                          />
-                        ) : (
-                          <TextAnimate animation="slideUp" by="word">
-                            {message.content}
-                          </TextAnimate>
-                        )}
-                    
+                      {message.isMarkdown ? (
+                        <AnimatedMarkdown
+                          content={message.content}
+                          animation="blurIn"
+                          sep='word'
+                          animationDuration="0.5s"
+                          animationTimingFunction="ease-in-out"
+                        />
+                      ) : (
+                        <TextAnimate animation="slideUp" by="word">
+                          {message.content}
+                        </TextAnimate>
+                      )}
                     </div>
                   </div>
                 ))}
+
+                {/* Transient Message (Loading State) */}
+                {transientMessage && (
+                  <div className="flex justify-start animate-in fade-in slide-in-from-left-2 duration-300">
+                    <div className="max-w-[85%] bg-white text-black border border-black/10 rounded-[16px] px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        {/* Animated Spinner */}
+                        <div className="mt-0.5 flex-shrink-0">
+                          <Spinner className="size-4 text-black/60" />
+                        </div>
+                        
+                        {/* Transient Message Content */}
+                        <div className="flex-1">
+                          <p className="text-sm text-black/70 leading-relaxed">
+                            {transientMessage}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {/* Typing Indicator Dots */}
+                      <div className="flex items-center gap-1 mt-2 ml-7">
+                        <span className="w-1.5 h-1.5 bg-black/30 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1.5 h-1.5 bg-black/30 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-1.5 h-1.5 bg-black/30 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div ref={messagesEndRef} />
               </>
             )}
